@@ -1,0 +1,54 @@
+{
+  "staff": [
+    34,
+    34,
+    34,
+    34
+  ],
+  "orders": [
+    {
+      "id": "ORD-1",
+      "product": "А",
+      "quantity": 1400000,
+      "due": 720,
+      "priority": 3
+    },
+    {
+      "id": "ORD-2",
+      "product": "Б",
+      "quantity": 1000000,
+      "due": 1440,
+      "priority": 2
+    },
+    {
+      "id": "ORD-3",
+      "product": "В",
+      "quantity": 1000000,
+      "due": 1440,
+      "priority": 3
+    },
+    {
+      "id": "ORD-4",
+      "product": "А",
+      "quantity": 1500000,
+      "due": 2160,
+      "priority": 3
+    },
+    {
+      "id": "ORD-5",
+      "product": "Б",
+      "quantity": 1000000,
+      "due": 2880,
+      "priority": 1
+    },
+    {
+      "id": "ORD-6",
+      "product": "В",
+      "quantity": 1100000,
+      "due": 2880,
+      "priority": 2
+    }
+  ],
+  "events": 0,
+  "maintenanceOffset": 0
+}

@@ -1,0 +1,8 @@
+nodeLinker: hoisted
+storeDir: .pnpm-store
+enableGlobalVirtualStore: false
+packageImportMethod: copy
+onlyBuiltDependencies:
+  - esbuild
+allowBuilds:
+  esbuild: set this to true or false
