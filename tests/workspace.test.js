@@ -1,0 +1,24 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {workspaceIndex,scenarioStorage,createScenario,readPlan,scenarioName} from '../src/scenarioStore.js';
+import {DEFAULT_CONFIG} from '../src/engine.js';
+test('workspace preserves the original, forks plan inputs and starts an independent ledger',()=>{
+ const entries=new Map(),storage={getItem:key=>entries.get(key)??null,setItem:(key,value)=>entries.set(key,value)};
+ const base=scenarioStorage(storage,'base'),index=workspaceIndex(storage);
+ const custom={...DEFAULT_CONFIG,staff:[29,30,31,32]};
+ base.setItem('epoch-config',JSON.stringify(custom));
+ base.setItem('epoch-decisions',JSON.stringify([{stage:3}]));
+ base.setItem('epoch-locked','true');
+ const copy=createScenario(storage,index,'Вариант 2','base'),id=copy.active;
+ assert.deepEqual(readPlan(storage,id).config.staff,custom.staff);
+ assert.deepEqual(readPlan(storage,id).decisions,[]);
+ assert.equal(readPlan(storage,id).locked,true);
+ scenarioStorage(storage,id).setItem('epoch-config',JSON.stringify(DEFAULT_CONFIG));
+ assert.deepEqual(readPlan(storage,'base').config.staff,custom.staff);
+ assert.equal(readPlan(storage,'base').decisions.at(-1).stage,3);
+ const fresh=createScenario(storage,copy,'Базовые условия');
+ assert.deepEqual(readPlan(storage,fresh.active).config,DEFAULT_CONFIG);
+ assert.equal(readPlan(storage,fresh.active).locked,false);
+ assert.throws(()=>scenarioName(fresh.items,' вариант 2 '));
+ assert.equal(workspaceIndex(storage).active,fresh.active);
+});

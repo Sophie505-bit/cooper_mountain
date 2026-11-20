@@ -38,20 +38,47 @@ export function calendar(t){
 export function workMinutes(a,b){let sum=0;while(a<b-1e-8){const c=calendar(a);const e=Math.min(b,c.next);if(c.working)sum+=e-a;a=e;}return sum;}
 export const setupTime=(a,b)=>a===b?0:({АБ:20,БА:20,АВ:30,ВА:30,БВ:25,ВБ:25}[a+b]);
 export function fmtTime(t){const n=Math.round(t)+480;return `D+${1+Math.floor(n/1440)} ${String(Math.floor(n%1440/60)).padStart(2,'0')}:${String(n%60).padStart(2,'0')}`;}
+export const WORKS = [
+ ...[['ТО-1','press-1',180,0,720],['ТО-2','grind-1',240,270,1440],['ТО-3','heat-1',180,1440,2880],['ТО-4','chrome-1',240,510,2880],['ТО-5','pack-1',180,1440,2880]].map(([id,machine,duration,defaultAt,deadline])=>({id,machine,duration,defaultAt,deadline,first:id==="ТО-5"?1440:0})),
+ ...[['ВАЛ-1','tef-1','А',240,0,1440],['ВАЛ-2a','grind-4','Б',180,0,2880],['ВАЛ-2b','grind-5','Б',180,0,2880],['ВАЛ-3','laser-1','В',240,1440,2880],...['wrap-1','wrap-2','wrap-3'].map((id,i)=>[`ВАЛ-4${i+1}`,id,'А',180,1440,2880])].map(([id,machine,product,duration,defaultAt,deadline])=>({id,machine,product,duration,defaultAt,deadline,first:defaultAt}))
+];
 export function validateConfig(c){
  if(!c||!Array.isArray(c.staff)||c.staff.length!==4||c.staff.some(n=>!Number.isInteger(n)||n<0||n>100))throw Error('Персонал: четыре целых значения от 0 до 100.');
  if(!Array.isArray(c.orders)||c.orders.length!==6)throw Error('Нужно шесть заказов.');
- const ids=new Set(); for(const o of c.orders){if(!o.id||ids.has(o.id)||!PRODUCTS.includes(o.product)||!Number.isFinite(o.quantity)||o.quantity<=0||o.quantity>1e8||![720,1440,2160,2880].includes(o.due)||![1,2,3].includes(o.priority))throw Error('Проверьте ID, продукт, объём, срок и приоритет заказов.');ids.add(o.id);}
+ const ids=new Set(); for(const o of c.orders){if(!o||typeof o.id!=='string'||!o.id.trim()||ids.has(o.id)||!PRODUCTS.includes(o.product)||!Number.isFinite(o.quantity)||o.quantity<=0||o.quantity>1e8||![720,1440,2160,2880].includes(o.due)||![1,2,3].includes(o.priority))throw Error('Проверьте ID, продукт, объём, срок и приоритет заказов.');ids.add(o.id);}
  if(!Number.isInteger(c.events)||c.events<0||c.events>2||!Number.isFinite(c.maintenanceOffset)||c.maintenanceOffset<0||c.maintenanceOffset>120)throw Error('Некорректные события или смещение ТО.');
  for(const key of ['baselinePolicy','firstReplanPolicy'])if(c[key]!==undefined&&!POLICIES.some(p=>p.id===c[key]))throw Error('Неизвестная стратегия в истории плана.');
  for(const key of ['baselineOffset','firstReplanOffset'])if(c[key]!==undefined&&(!Number.isFinite(c[key])||c[key]<0||c[key]>120))throw Error('Некорректное размещение ТО в истории.');
+ if(c.maintenanceMachines!==undefined){
+   if(!c.maintenanceMachines||typeof c.maintenanceMachines!=='object'||Array.isArray(c.maintenanceMachines))throw Error('Проверьте назначения машин для ТО.');
+   for(const [id,machine] of Object.entries(c.maintenanceMachines)){
+     const job=WORKS.find(w=>w.id===id&&!w.product),candidate=MACHINES.find(m=>m.id===machine);
+     if(!job || !candidate || candidate.type!==job.machine.split('-')[0])throw Error('Неподходящая машина для '+id);
+   }
+ }
+ if(c.reserveNote!==undefined&&(typeof c.reserveNote!=='string'||c.reserveNote.length>500))throw Error('Обоснование резерва: до 500 символов.');
+ if(c.workStarts!==undefined){
+   if(!c.workStarts||typeof c.workStarts!=='object'||Array.isArray(c.workStarts))throw Error('Некорректные назначения работ.');
+   for(const [id,minute] of Object.entries(c.workStarts)){
+     const job=WORKS.find(w=>w.id===id);
+     if(!job || !Number.isInteger(minute)||minute<job.first||minute>=job.deadline||workMinutes(minute,job.deadline)<job.duration)throw Error('Недопустимое окно работы '+id);
+   }
+ }
  return structuredClone(c);
+}
+function sequence(orders, policy) {
+ const indices = [...policy.order];
+ if (policy.id === 'balanced' || policy.id === 'priority') {
+   indices.sort((a,b) => orders[a].due - orders[b].due ||
+     (policy.id === 'priority' ? orders[b].priority - orders[a].priority : 0));
+ }
+ return indices;
 }
 export function createGraph(orders,policy=POLICIES[0]){
  // Technological arcs form a DAG. Resource-order arcs orient disjunctive choices.
  const nodes=[],technological=[],resource=[];
  for(const o of orders){const r=ROUTES[o.product];r.forEach((type,i)=>{const id=`${o.id}:${type}`;nodes.push({id,type,order:o.id});if(i)technological.push([`${o.id}:${r[i-1]}`,id]);});}
- for(const type of TYPES){const tasks=policy.order.map(i=>orders[i]).filter(o=>ROUTES[o.product].includes(type.id));for(let i=1;i<tasks.length;i++)resource.push([`${tasks[i-1].id}:${type.id}`,`${tasks[i].id}:${type.id}`]);}
+ for(const type of TYPES){const tasks=sequence(orders,policy).map(i=>orders[i]).filter(o=>ROUTES[o.product].includes(type.id));for(let i=1;i<tasks.length;i++)resource.push([`${tasks[i-1].id}:${type.id}`,`${tasks[i].id}:${type.id}`]);}
  return {nodes,technological,resource};
 }
 export function isAcyclic(graph){const adj=new Map(graph.nodes.map(n=>[n.id,[]])),degree=new Map(graph.nodes.map(n=>[n.id,0]));for(const [a,b]of [...graph.technological,...graph.resource]){adj.get(a).push(b);degree.set(b,degree.get(b)+1);}const q=[...degree].filter(([,d])=>!d).map(([n])=>n);let n=0;while(q.length){const a=q.pop();n++;for(const b of adj.get(a)){degree.set(b,degree.get(b)-1);if(!degree.get(b))q.push(b);}}return n===graph.nodes.length;}
@@ -60,12 +87,19 @@ export function simulate(raw,policy=POLICIES[0]){
  const start=performance.now(),c=validateConfig(raw),machines=MACHINES.map(m=>({...m,product:m.initial,setup:0}));
  const stocks={},produced={},final={},finished={},timeline=Object.fromEntries(machines.map(m=>[m.id,[]]));
  for(const p of PRODUCTS){stocks[p]={};produced[p]={};final[p]=0;for(const s of ROUTES[p]){stocks[p][s]=INITIAL[p][s]||0;produced[p][s]=0;}}
- const offsetAt=at=>c.events&&at<120?(c.baselineOffset??0):c.events===2&&at<690?(c.firstReplanOffset??0):c.maintenanceOffset;
- const maint=[['ТО-1','press-1',180,0,720],['ТО-2','grind-1',240,270,1440],['ТО-3','heat-1',180,1440,2880],['ТО-4','chrome-1',240,510,2880],['ТО-5','pack-1',180,1440,2880]].map(([id,machine,duration,at,deadline])=>({id,machine,duration,left:duration,at:at+offsetAt(at),deadline}));
- const vals=[['ВАЛ-1','tef-1','А',240,0,1440],['ВАЛ-2a','grind-4','Б',180,0,2880],['ВАЛ-2b','grind-5','Б',180,0,2880],['ВАЛ-3','laser-1','В',240,1440,2880],...['wrap-1','wrap-2','wrap-3'].map((id,i)=>[`ВАЛ-4${i+1}`,id,'А',180,1440,2880])].map(([id,machine,product,duration,at,deadline])=>({id,machine,product,duration,left:duration,at,deadline}));
+ function scheduledStart(job){
+   if(c.workStarts?.[job.id]!==undefined)return c.workStarts[job.id];
+   if(job.product)return job.defaultAt;
+   let at=job.defaultAt+(c.events?(c.baselineOffset??0):c.maintenanceOffset);
+   if(c.events && at>=120)at=Math.max(120,job.defaultAt+(c.events===2?(c.firstReplanOffset??0):c.maintenanceOffset));
+   if(c.events===2 && at>=690)at=Math.max(690,job.defaultAt+c.maintenanceOffset);
+   return at;
+ }
+ const jobs=WORKS.map(w=>({...w,machine:c.maintenanceMachines?.[w.id]??w.machine,left:w.duration,at:scheduledStart(w)}));
+ const maint=jobs.filter(w=>!w.product),vals=jobs.filter(w=>w.product);
  const maintByMachine=Object.fromEntries(maint.map(m=>[m.machine,m])),valByMachine=Object.fromEntries(vals.map(v=>[v.machine,v]));
  const dispatch=[...machines].sort((a,b)=>TYPE_MAP[b.type].rank-TYPE_MAP[a.type].rank||a.index-b.index);
- const makeTasks=pol=>{const cumulative=Object.fromEntries(PRODUCTS.map(p=>[p,0]));return pol.order.map(i=>{const o=c.orders[i],r=ROUTES[o.product];cumulative[o.product]+=o.quantity;return {...o,targets:Object.fromEntries(r.map((s,j)=>[s,Math.max(0,cumulative[o.product]-r.slice(j).reduce((a,k)=>a+(INITIAL[o.product][k]||0),0))]))};});};
+ const makeTasks=pol=>{const cumulative=Object.fromEntries(PRODUCTS.map(p=>[p,0]));return sequence(c.orders,pol).map(i=>{const o=c.orders[i],r=ROUTES[o.product];cumulative[o.product]+=o.quantity;return {...o,targets:Object.fromEntries(r.map((s,j)=>[s,Math.max(0,cumulative[o.product]-r.slice(j).reduce((a,k)=>a+(INITIAL[o.product][k]||0),0))]))};});};
  const basePolicy=POLICIES.find(p=>p.id===c.baselinePolicy)||POLICIES[0],firstPolicy=POLICIES.find(p=>p.id===c.firstReplanPolicy)||basePolicy;
  const baseTasks=makeTasks(basePolicy),firstTasks=makeTasks(firstPolicy),tasks=makeTasks(policy);
  const shiftStats=Array.from({length:4},()=>({output:0,peak:0,labor:0,setup:0,idle:0,stocks:null,products:{А:0,Б:0,В:0}}));
@@ -76,7 +110,11 @@ export function simulate(raw,policy=POLICIES[0]){
   // Until the incident, all alternatives share the base decisions (no clairvoyance).
   const reaction=c.events===2?690:c.events===1?120:0,epochPolicy=c.events&&t<120-eps?basePolicy:c.events===2&&t<690-eps?firstPolicy:policy,activeTasks=c.events&&t<120-eps?baseTasks:c.events===2&&t<690-eps?firstTasks:tasks;
   const chosen={};for(const type of TYPES)chosen[type.id]=activeTasks.find(o=>o.targets[type.id]!==undefined&&produced[o.product][type.id]<o.targets[type.id]-eps);
-  const allocations=[],states={},groupCounts={},activeCounts={},validationFamilies=new Set();let used=0;
+  if(c.events && Math.abs(t-120)<eps){
+   const active=machines.filter(m=>m.type==='grind'&&timeline[m.id].at(-1)?.status==='running');
+   repairMachine=active.find(m=>m.id==='grind-2')?.id??active[0]?.id??null;
+ }
+ const allocations=[],states={},groupCounts={},activeCounts={},validationFamilies=new Set();let used=0;
   function cost(m){const ty=TYPE_MAP[m.type],n=groupCounts[m.type]||0;return ty.operators*(Math.ceil((n+1)/ty.group)-Math.ceil(n/ty.group));}
   // Downstream-first dispatch avoids assigning all operators to feeding buffers.
   for(const m of dispatch){
@@ -104,7 +142,7 @@ export function simulate(raw,policy=POLICIES[0]){
   for(const p of PRODUCTS){const r=ROUTES[p];for(let j=0;j<r.length;j++){const s=r[j],ty=TYPE_MAP[s];let rate=(chosen[s]?.product===p?(activeCounts[s]||0):0)*ty.speed*.85;
     if(j&&stocks[p][r[j-1]]<eps)rate=Math.min(rate,rates[p][r[j-1]]||0);rates[p][s]=rate;
   }}
-  for(const a of allocations)if(!a.setup&&(rates[a.task.product][a.m.type]||0)<eps){states[a.m.id]={status:'waiting',product:a.task.product,reason:'Нет подачи с предыдущего этапа'};}
+  for(const a of allocations)if(!a.setup&&(rates[a.task.product][a.m.type]||0)<eps){states[a.m.id]={status:'waiting',product:a.task.product,reason:'Нет подачи с предыдущего этапа'};if(a.validation)used--;}
   // Epoch ends at the next boundary, job completion, buffer depletion or target hit.
   let end=Math.min(2880,cal.next,(shift+1)*720);
   const boundaries=[120,300,690,1440,...maint.map(x=>x.at),...vals.map(x=>x.at),...maint.map(x=>x.deadline),...vals.map(x=>x.deadline)];
@@ -118,7 +156,7 @@ export function simulate(raw,policy=POLICIES[0]){
   }
   if(end<=t+eps)end=Math.min(cal.next,t+.001);const dt=end-t;
   if(cal.working){
-   shiftStats[shift].peak=Math.max(shiftStats[shift].peak,used);shiftStats[shift].labor+=used*dt/60;
+   shiftStats[shift].peak=Math.max(shiftStats[shift].peak,used);shiftStats[shift].labor+=used*dt/60;shiftStats[shift].idle+=(available-used)*dt/60;
    for(const mt of maint)if(states[mt.machine]?.status==='maintenance'&&states[mt.machine]?.job===mt.id)mt.left=Math.max(0,mt.left-dt);
    for(const a of allocations){if(a.setup){a.m.setup=Math.max(0,a.m.setup-dt);setupMinutes+=dt;shiftStats[shift].setup+=dt;if(a.m.setup<eps)a.m.product=a.m.nextProduct;}if(a.validation&&states[a.m.id].status==='running')a.validation.left=Math.max(0,a.validation.left-dt);}
    for(const p of PRODUCTS){const r=ROUTES[p];for(let j=0;j<r.length;j++){const s=r[j],q=rates[p][s]*dt;produced[p][s]+=q;stocks[p][s]+=q-(j<r.length-1?rates[p][r[j+1]]*dt:q);if(stocks[p][s]<eps)stocks[p][s]=0;}
@@ -127,22 +165,30 @@ export function simulate(raw,policy=POLICIES[0]){
   }
   for(const m of machines){const s=states[m.id],list=timeline[m.id],last=list.at(-1);if(last&&last.status===s.status&&last.product===s.product&&last.validation===s.validation&&last.reason===s.reason&&last.job===s.job)last.end=end;else list.push({start:t,end,...s});}
   // Allocate completed products to orders by deadline, independent of dispatch order.
-  for(const p of PRODUCTS){let allocated=0;for(const o of c.orders.filter(o=>o.product===p).sort((a,b)=>a.due-b.due)){allocated+=o.quantity;if(!finished[o.id]&&final[p]>=allocated-eps)finished[o.id]=end;}}
-  epochs.push({start:t,end,used,available,finalStart,final:{...final},stocks:cloneStocks(stocks)});
+  for(const p of PRODUCTS){let allocated=0;for(const o of c.orders.filter(o=>o.product===p).sort((a,b)=>a.due-b.due)){allocated+=o.quantity;if(finished[o.id]===undefined&&final[p]>=allocated-eps){
+    const change=final[p]-finalStart[p];
+    const fraction=change>0?Math.max(0,Math.min(1,(allocated-finalStart[p])/change)):0;
+    finished[o.id]=t+fraction*(end-t);
+   }}}
+  epochs.push({start:t,end,validationStaff:Object.values(states).filter(s=>s.validation).length,rates,used,available,finalStart,final:{...final},stocks:cloneStocks(stocks)});
   t=end;
-  if(Math.abs(t-(shift+1)*720)<eps){shiftStats[shift].stocks=cloneStocks(stocks);atDue[t]={...final};}
+  if(Math.abs(t-(shift+1)*720)<eps){shiftStats[shift].stocks=cloneStocks(stocks);atDue[(shift+1)*720]={...final};}
  }
+ if(t<2880-eps)throw Error("Расчёт не достиг конца четвёртой смены");
  const orderStats=c.orders.map(o=>{let earlier=c.orders.filter(x=>x.product===o.product&&(x.due<o.due||(x.due===o.due&&c.orders.indexOf(x)<c.orders.indexOf(o)))).reduce((a,x)=>a+x.quantity,0);return {...o,completed:Math.max(0,Math.min(o.quantity,final[o.product]-earlier)),onTime:Math.max(0,Math.min(o.quantity,(atDue[o.due]?.[o.product]||0)-earlier)),finish:finished[o.id]??null};});
  const rawMissed=orderStats.reduce((s,o)=>s+o.quantity-o.onTime,0),missed=rawMissed<eps?0:rawMissed,remainingWorks=[...maint,...vals].filter(x=>x.left>eps),graph=createGraph(c.orders,policy);
  const result={policy,final,stocks,stageProduced:produced,epochs,timeline,orderStats,shiftStats,maint,vals,missed,remainingWorks,setupMinutes,graph,iterations,repairMachine,total:Object.values(final).reduce((a,b)=>a+b,0),labor:shiftStats.reduce((s,x)=>s+x.labor,0)};
- result.feasible=remainingWorks.length===0;result.ms=performance.now()-start;return result;
+ result.incidentConflicts=[];
+ if(c.events>=1&&!repairMachine)result.incidentConflicts.push('В 10:00 нет работающей машины GRIND для заданного события.');
+ if(c.events===2&&c.staff[1]<2)result.incidentConflicts.push('В заявке на смену 2 меньше двух человек: заданный невыход неприменим.');
+ result.feasible=remainingWorks.length===0 && !result.incidentConflicts.length;result.ms=performance.now()-start;return result;
 }
 export function optimize(config){
  const start=performance.now();
  // Orient resource-order arcs; reject cycles before evaluating the candidate.
  const candidates=[];for(const policy of POLICIES)for(const offset of [0,60,120]){const graph=createGraph(config.orders,policy);if(isAcyclic(graph)){const result=simulate({...config,maintenanceOffset:offset},policy);candidates.push({...result,offset});}}
  // Hard work-window violations precede deadline deficit; never silently relax them.
- candidates.sort((a,b)=>a.remainingWorks.length-b.remainingWorks.length||a.missed-b.missed||a.labor-b.labor||a.setupMinutes-b.setupMinutes);
+ candidates.sort((a,b)=>a.incidentConflicts.length-b.incidentConflicts.length||a.remainingWorks.length-b.remainingWorks.length||a.missed-b.missed||a.labor-b.labor||a.setupMinutes-b.setupMinutes);
  return {candidates,best:candidates[0],ms:performance.now()-start};
 }
 export function stateAt(result,time){return Object.fromEntries(Object.entries(result.timeline).map(([id,items])=>[id,items.find(x=>time>=x.start-eps&&time<x.end-eps)||items.at(-1)]));}

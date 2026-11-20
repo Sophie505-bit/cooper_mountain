@@ -10,3 +10,38 @@
 nav button{font-size:14px}.workspace{font-size:12px}.workspace small{font-size:10px}.sidebar-note,.sidebar-note small{font-size:12px}.sidebar-bottom select{font-size:12px}.sidebar-bottom small{font-size:11px}.breadcrumb,.local-tag{font-size:12px}.page-heading p{font-size:14px}.button{font-size:13px}.stat-top{font-size:13px}.stat>small{font-size:12px}.badge{font-size:12px}.segmented button,.toolbar-right select{font-size:13px}.scenario-label{font-size:12px}.scene-label{font-size:10px}.scene-time{font-size:13px}.scene-help,.scene-legend span{font-size:11px}.scene-counter span{font-size:11px}.detail-heading .eyebrow{font-size:10px}.status-pill{font-size:12px}.detail-grid>div{font-size:11px}.detail-grid strong{font-size:13px}.detail-explanation{font-size:12px}.detail-panel .button{font-size:12px}.factory-layout .scene-panel{height:480px}.event-strip strong{font-size:12px}.event-strip small{font-size:11px}.event-button{font-size:11px}.playback-time{font-size:12px}.scrubber-labels{font-size:10px}.speed{font-size:12px}.panel-heading h2{font-size:17px}.panel-heading p{font-size:12px}.search input{font-size:12px}.timeline-head{font-size:12px}.timeline-row{height:34px}.timeline-row>button{font-size:12px}.bar{font-size:10px;height:17px;line-height:17px}.timeline-rows{max-height:290px}footer,footer button{font-size:10px}.approval-bar,.approval-bar>button{font-size:12px}.variant-card h3{font-size:17px}.variant-card p,.variant-card dl>div{font-size:12px}.variant-top>span{font-size:11px}.work-list>div{font-size:12px}th{font-size:12px}td{font-size:14px}.table-scroll td small{font-size:11px}
 @media(max-width:950px) and (min-width:681px){nav button{font-size:0}.stat-top{font-size:11px}.stat>small{font-size:10px}.scene-label{font-size:8px}.scene-time{font-size:10px}.scene-legend span{font-size:9px}.detail-explanation{font-size:11px}.detail-grid strong{font-size:12px}.page-heading p{font-size:12px}.event-strip{flex-wrap:wrap}.event-strip>div{width:100%}.sidebar.mobile-open nav button{font-size:14px}}
 @media(max-width:680px){.page-heading p{font-size:12px}.button{font-size:12px}.stat-top{font-size:12px}.stat>small{font-size:10px}.badge{font-size:11px}.segmented button,.toolbar-right select{font-size:11px}.scene-label{font-size:8px}.scene-time{font-size:10px}.scene-help,.scene-legend span{font-size:10px}.scene-counter span{font-size:10px}.factory-layout .scene-panel{height:370px}.detail-grid>div{font-size:9px}.detail-grid strong{font-size:11px}.detail-explanation{font-size:11px}.event-button{font-size:9px}.scrubber-labels{font-size:8px}.approval-bar,.approval-bar>button{font-size:10px}.panel-heading h2{font-size:15px}.panel-heading p{font-size:11px}.sidebar.mobile-open nav button{font-size:14px}.timeline-row>button{font-size:11px}.timeline-head{font-size:10px}}
+
+/* Unslop polish: keep the production scene as the visual focus and quiet the chrome. */
+:root{--teal:#176d59;--muted:#718087;--border:#e1e6e7;color:#26363d;background:#f4f6f6;font-variant-numeric:tabular-nums}
+.sidebar{background:#1d292f;color:#d1dadd}
+.brand{font-weight:600;letter-spacing:0}
+.brand-icon{background:#345d52;border-radius:8px}
+.brand-sub,.nav-label,.eyebrow,.scene-label{letter-spacing:0;text-transform:none;font-weight:500}
+.brand-sub{font-size:11px;color:#9aa9ad;margin:8px 0 32px}
+.nav-label{font-size:12px;color:#9aa9ad;margin:28px 12px 8px}
+nav{gap:4px}
+nav button{min-height:36px;padding:8px 12px;color:#b1c0c3}
+nav button.active{background:#2d3d40;color:#edf5f2}
+nav button.active:before{background:#76b49c}
+.nav-count{background:transparent;color:#aab9bc;font-variant-numeric:tabular-nums}
+.sidebar-note{border-color:#38464a}
+.sidebar-note small{color:#9aa9ad}
+.topbar,.stat,.detail-panel,.playback{box-shadow:none}
+.content{max-width:1600px}
+.eyebrow{font-size:12px;color:#718087}
+h1{font-weight:500;letter-spacing:-.5px}
+h2,h3{font-weight:500}
+.page-heading p{color:#66767e}
+.stat{padding:20px;border-radius:12px}
+.stat-top svg{color:#89979d}
+.stat>small{color:#718087}
+.button.primary{background:#176d59;border-color:#176d59;box-shadow:none}
+.badge.good{background:#e9f3ee;color:#276e55;border-color:#d7e8dd}
+.machine-illustration{background:#f2f5f4}
+.mini-machine{box-shadow:7px 6px 0 #c4d0cc}
+.scene-counter strong{color:#315e50}
+.pulse-dot{background:#409879}
+.scene-label{color:#4e7063}
+.button:hover:not(:disabled){filter:none;border-color:#b8c9c5;background:#f7faf8}
+.button.primary:hover:not(:disabled){background:#125c4b;border-color:#125c4b}
+@media(max-width:680px){.eyebrow{font-size:11px}.scene-label{font-size:10px}.stat{padding:16px}.detail-grid>div{font-size:10px}.detail-grid strong{font-size:11px}.event-button{font-size:10px}}

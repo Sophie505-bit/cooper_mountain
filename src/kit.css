@@ -1,0 +1,6 @@
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "tw-animate-css";
+@custom-variant dark (&:where(.dark,.dark *));
+@theme {--color-background:#111113;--color-foreground:#fafafa;--color-card:#18181b;--color-card-foreground:#fafafa;--color-popover:#202023;--color-popover-foreground:#fafafa;--color-primary:#fafafa;--color-primary-foreground:#18181b;--color-secondary:#28282b;--color-secondary-foreground:#fafafa;--color-muted:#29292d;--color-muted-foreground:#aaaab2;--color-accent:#333338;--color-accent-foreground:#fafafa;--color-border:#36363b;--color-input:#414147;--color-ring:#aaaab3;--color-destructive:#e97878;}
+[data-slot=select-content]{border:1px solid #444;}[data-slot=select-trigger]{min-width:0;max-width:100%;color:inherit;background:#222225;border:1px solid #414147;}[data-slot=slider]{min-width:72px;}
