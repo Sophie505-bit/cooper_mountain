@@ -42,6 +42,26 @@ export const WORKS = [
  ...[['ТО-1','press-1',180,0,720],['ТО-2','grind-1',240,270,1440],['ТО-3','heat-1',180,1440,2880],['ТО-4','chrome-1',240,510,2880],['ТО-5','pack-1',180,1440,2880]].map(([id,machine,duration,defaultAt,deadline])=>({id,machine,duration,defaultAt,deadline,first:id==="ТО-5"?1440:0})),
  ...[['ВАЛ-1','tef-1','А',240,0,1440],['ВАЛ-2a','grind-4','Б',180,0,2880],['ВАЛ-2b','grind-5','Б',180,0,2880],['ВАЛ-3','laser-1','В',240,1440,2880],...['wrap-1','wrap-2','wrap-3'].map((id,i)=>[`ВАЛ-4${i+1}`,id,'А',180,1440,2880])].map(([id,machine,product,duration,defaultAt,deadline])=>({id,machine,product,duration,defaultAt,deadline,first:defaultAt}))
 ];
+export function incidentTime(config){return config.events===2?690:config.events===1?120:0;}
+export function workPlan(config,prefix=''){
+ const key=name=>prefix?prefix+name[0].toUpperCase()+name.slice(1):name;
+ return {workStarts:config[key('workStarts')]??config.workStarts??{},maintenanceMachines:config[key('maintenanceMachines')]??config.maintenanceMachines??{},validationMachines:config[key('validationMachines')]??config.validationMachines??{},offset:prefix?config[prefix==='baseline'?'baselineOffset':'firstReplanOffset']??0:config.maintenanceOffset};
+}
+export function captureWorkPlan(config,prefix){const p=workPlan(config);return {[prefix+'WorkStarts']:structuredClone(p.workStarts),[prefix+'MaintenanceMachines']:structuredClone(p.maintenanceMachines),[prefix+'ValidationMachines']:structuredClone(p.validationMachines)};}
+export function workIsFrozen(config,result,id){
+ const cutoff=incidentTime(config);if(!cutoff)return false;
+ const job=[...result.maint,...result.vals].find(w=>w.id===id);
+ return job?.startedAt!==undefined&&job.startedAt<cutoff-1e-5;
+}
+function validateWorkPlan(plan){
+ for(const [field,isValidation] of [['maintenanceMachines',false],['validationMachines',true]]){
+  const map=plan[field];if(!map||typeof map!=='object'||Array.isArray(map))throw Error('Некорректные назначения машин.');
+  for(const [id,machine]of Object.entries(map)){const job=WORKS.find(w=>w.id===id&&Boolean(w.product)===isValidation),m=MACHINES.find(m=>m.id===machine);if(!job||!m||m.type!==job.machine.split('-')[0])throw Error('Неподходящая машина для '+id);}
+ }
+ const occupied=new Set();for(const job of WORKS.filter(w=>w.product)){const machine=plan.validationMachines[job.id]??job.machine,key=job.id.slice(0,5)+':'+machine;if(occupied.has(key))throw Error('Для '+job.id.slice(0,5)+' нужны разные машины.');occupied.add(key);}
+ if(!plan.workStarts||typeof plan.workStarts!=='object'||Array.isArray(plan.workStarts))throw Error('Некорректные назначения работ.');
+ for(const [id,minute]of Object.entries(plan.workStarts)){const job=WORKS.find(w=>w.id===id);if(!job||!Number.isInteger(minute)||minute<job.first||minute>=job.deadline||workMinutes(minute,job.deadline)<job.duration)throw Error('Недопустимое окно работы '+id);}
+}
 export function validateConfig(c){
  if(!c||!Array.isArray(c.staff)||c.staff.length!==4||c.staff.some(n=>!Number.isInteger(n)||n<0||n>100))throw Error('Персонал: четыре целых значения от 0 до 100.');
  if(!Array.isArray(c.orders)||c.orders.length!==6)throw Error('Нужно шесть заказов.');
@@ -64,7 +84,10 @@ export function validateConfig(c){
      if(!job || !Number.isInteger(minute)||minute<job.first||minute>=job.deadline||workMinutes(minute,job.deadline)<job.duration)throw Error('Недопустимое окно работы '+id);
    }
  }
- return structuredClone(c);
+ for(const prefix of ['', 'baseline','firstReplan'])validateWorkPlan(workPlan(c,prefix));
+ const normalized=structuredClone(c);
+ for(const prefix of c.events===2?['baseline','firstReplan']:c.events?['baseline']:[]){for(const [key,value]of Object.entries(captureWorkPlan(c,prefix)))if(normalized[key]===undefined)normalized[key]=value;}
+ return normalized;
 }
 function sequence(orders, policy) {
  const indices = [...policy.order];
@@ -87,17 +110,17 @@ export function simulate(raw,policy=POLICIES[0]){
  const start=performance.now(),c=validateConfig(raw),machines=MACHINES.map(m=>({...m,product:m.initial,setup:0}));
  const stocks={},produced={},final={},finished={},timeline=Object.fromEntries(machines.map(m=>[m.id,[]]));
  for(const p of PRODUCTS){stocks[p]={};produced[p]={};final[p]=0;for(const s of ROUTES[p]){stocks[p][s]=INITIAL[p][s]||0;produced[p][s]=0;}}
- function scheduledStart(job){
-   if(c.workStarts?.[job.id]!==undefined)return c.workStarts[job.id];
-   if(job.product)return job.defaultAt;
-   let at=job.defaultAt+(c.events?(c.baselineOffset??0):c.maintenanceOffset);
-   if(c.events && at>=120)at=Math.max(120,job.defaultAt+(c.events===2?(c.firstReplanOffset??0):c.maintenanceOffset));
-   if(c.events===2 && at>=690)at=Math.max(690,job.defaultAt+c.maintenanceOffset);
-   return at;
- }
- const jobs=WORKS.map(w=>({...w,machine:c.maintenanceMachines?.[w.id]??w.machine,left:w.duration,at:scheduledStart(w)}));
+ const initialPlan=workPlan(c,c.events?'baseline':'');
+ const scheduledStart=(job,plan,cutoff=0)=>Math.max(cutoff,plan.workStarts[job.id]??(job.defaultAt+(job.product?0:plan.offset)));
+ const assignedMachine=(job,plan)=>(job.product?plan.validationMachines:plan.maintenanceMachines)[job.id]??job.machine;
+ const jobs=WORKS.map(w=>({...w,machine:assignedMachine(w,initialPlan),left:w.duration,at:scheduledStart(w,initialPlan)}));
  const maint=jobs.filter(w=>!w.product),vals=jobs.filter(w=>w.product);
- const maintByMachine=Object.fromEntries(maint.map(m=>[m.machine,m])),valByMachine=Object.fromEntries(vals.map(v=>[v.machine,v]));
+ let maintByMachine=Object.fromEntries(maint.map(m=>[m.machine,m])),valByMachine=Object.fromEntries(vals.map(v=>[v.machine,v]));
+ function reviseFutureWork(plan,cutoff){
+  for(const job of jobs)if(job.startedAt===undefined){job.at=scheduledStart(job,plan,cutoff);job.machine=assignedMachine(job,plan);}
+  const seen=new Set();for(const v of vals){const key=v.id.slice(0,5)+':'+v.machine;if(seen.has(key))throw Error('Машина уже занята другой проверкой '+v.id.slice(0,5));seen.add(key);}
+  maintByMachine=Object.fromEntries(maint.map(m=>[m.machine,m]));valByMachine=Object.fromEntries(vals.map(v=>[v.machine,v]));
+ }
  const dispatch=[...machines].sort((a,b)=>TYPE_MAP[b.type].rank-TYPE_MAP[a.type].rank||a.index-b.index);
  const makeTasks=pol=>{const cumulative=Object.fromEntries(PRODUCTS.map(p=>[p,0]));return sequence(c.orders,pol).map(i=>{const o=c.orders[i],r=ROUTES[o.product];cumulative[o.product]+=o.quantity;return {...o,targets:Object.fromEntries(r.map((s,j)=>[s,Math.max(0,cumulative[o.product]-r.slice(j).reduce((a,k)=>a+(INITIAL[o.product][k]||0),0))]))};});};
  const basePolicy=POLICIES.find(p=>p.id===c.baselinePolicy)||POLICIES[0],firstPolicy=POLICIES.find(p=>p.id===c.firstReplanPolicy)||basePolicy;
@@ -105,6 +128,8 @@ export function simulate(raw,policy=POLICIES[0]){
  const shiftStats=Array.from({length:4},()=>({output:0,peak:0,labor:0,setup:0,idle:0,stocks:null,products:{А:0,Б:0,В:0}}));
  let t=0,iterations=0,repairMachine='grind-2',setupMinutes=0; const epochs=[];const atDue={};
  while(t<2880-eps && iterations++<25000){
+  if(c.events&&Math.abs(t-120)<eps)reviseFutureWork(workPlan(c,c.events===2?'firstReplan':''),120);
+  if(c.events===2&&Math.abs(t-690)<eps)reviseFutureWork(workPlan(c),690);
   const finalStart={...final};
   const cal=calendar(t),shift=Math.min(3,Math.floor(t/720)),available=Math.max(0,c.staff[shift]-(c.events>=2&&shift===1?2:0));
   // Until the incident, all alternatives share the base decisions (no clairvoyance).
@@ -128,7 +153,7 @@ export function simulate(raw,policy=POLICIES[0]){
    if(input<eps&&!feedPossible&&m.setup<eps){states[m.id]={status:'waiting',reason:'Нет полуфабриката',product:task.product};continue;}
    // Do not preempt an already started setup.
    if(m.setup<eps&&m.product!==task.product){m.setup=setupTime(m.product,task.product);m.nextProduct=task.product;}
-   const maybeV=valByMachine[m.id],v=maybeV&&maybeV.left>eps&&t>=maybeV.at-eps&&t<maybeV.deadline-eps&&maybeV.product===task.product?maybeV:null;
+   const maybeV=valByMachine[m.id],v=maybeV&&maybeV.interruptedAt===undefined&&maybeV.left>eps&&t>=maybeV.at-eps&&t<maybeV.deadline-eps&&maybeV.product===task.product?maybeV:null;
    const parallel=epochPolicy.validationParallel;
    const family=v?.id.slice(0,5),otherVal=v&&validationFamilies.has(family);
    const doVal=v&&m.setup<eps&&(parallel||!otherVal);
@@ -143,6 +168,16 @@ export function simulate(raw,policy=POLICIES[0]){
     if(j&&stocks[p][r[j-1]]<eps)rate=Math.min(rate,rates[p][r[j-1]]||0);rates[p][s]=rate;
   }}
   for(const a of allocations)if(!a.setup&&(rates[a.task.product][a.m.type]||0)<eps){states[a.m.id]={status:'waiting',product:a.task.product,reason:'Нет подачи с предыдущего этапа'};if(a.validation)used--;}
+  // Validation is one continuous productive run, apart from calendar breaks.
+  // Do not accumulate its remaining minutes after a product/resource interruption.
+  if(cal.working){
+   for(const v of vals){
+    const s=states[v.machine],valid=s?.status==='running'&&s.product===v.product&&s.validation===v.id;
+    if(v.left>eps&&v.startedAt!==undefined&&v.interruptedAt===undefined&&!valid){v.interruptedAt=t;v.interruptionReason=s?.product!==v.product||s?.status==='setup'?'Смена продукта до завершения валидации':s?.reason||'Остановка валидации до завершения';}
+    if(valid&&v.startedAt===undefined)v.startedAt=t;
+   }
+   for(const mt of maint)if(states[mt.machine]?.status==='maintenance'&&states[mt.machine]?.job===mt.id&&mt.startedAt===undefined)mt.startedAt=t;
+  }
   // Epoch ends at the next boundary, job completion, buffer depletion or target hit.
   let end=Math.min(2880,cal.next,(shift+1)*720);
   const boundaries=[120,300,690,1440,...maint.map(x=>x.at),...vals.map(x=>x.at),...maint.map(x=>x.deadline),...vals.map(x=>x.deadline)];
@@ -177,7 +212,8 @@ export function simulate(raw,policy=POLICIES[0]){
  if(t<2880-eps)throw Error("Расчёт не достиг конца четвёртой смены");
  const orderStats=c.orders.map(o=>{let earlier=c.orders.filter(x=>x.product===o.product&&(x.due<o.due||(x.due===o.due&&c.orders.indexOf(x)<c.orders.indexOf(o)))).reduce((a,x)=>a+x.quantity,0);return {...o,completed:Math.max(0,Math.min(o.quantity,final[o.product]-earlier)),onTime:Math.max(0,Math.min(o.quantity,(atDue[o.due]?.[o.product]||0)-earlier)),finish:finished[o.id]??null};});
  const rawMissed=orderStats.reduce((s,o)=>s+o.quantity-o.onTime,0),missed=rawMissed<eps?0:rawMissed,remainingWorks=[...maint,...vals].filter(x=>x.left>eps),graph=createGraph(c.orders,policy);
- const result={policy,final,stocks,stageProduced:produced,epochs,timeline,orderStats,shiftStats,maint,vals,missed,remainingWorks,setupMinutes,graph,iterations,repairMachine,total:Object.values(final).reduce((a,b)=>a+b,0),labor:shiftStats.reduce((s,x)=>s+x.labor,0)};
+ const result={config:c,policy,final,stocks,stageProduced:produced,epochs,timeline,orderStats,shiftStats,maint,vals,missed,remainingWorks,setupMinutes,graph,iterations,repairMachine,total:Object.values(final).reduce((a,b)=>a+b,0),labor:shiftStats.reduce((s,x)=>s+x.labor,0)};
+ result.validationConflicts=vals.filter(v=>v.interruptedAt!==undefined).map(v=>({id:v.id,machine:v.machine,at:v.interruptedAt,reason:v.interruptionReason}));
  result.incidentConflicts=[];
  if(c.events>=1&&!repairMachine)result.incidentConflicts.push('В 10:00 нет работающей машины GRIND для заданного события.');
  if(c.events===2&&c.staff[1]<2)result.incidentConflicts.push('В заявке на смену 2 меньше двух человек: заданный невыход неприменим.');
@@ -186,9 +222,9 @@ export function simulate(raw,policy=POLICIES[0]){
 export function optimize(config){
  const start=performance.now();
  // Orient resource-order arcs; reject cycles before evaluating the candidate.
- const candidates=[];for(const policy of POLICIES)for(const offset of [0,60,120]){const graph=createGraph(config.orders,policy);if(isAcyclic(graph)){const result=simulate({...config,maintenanceOffset:offset},policy);candidates.push({...result,offset});}}
+ const candidates=[],seen=new Set();let evaluated=0;for(const policy of POLICIES)for(const offset of [0,60,120]){const graph=createGraph(config.orders,policy);if(isAcyclic(graph)){const result=simulate({...config,maintenanceOffset:offset},policy);evaluated++;const key=JSON.stringify(result.timeline);if(!seen.has(key)){seen.add(key);candidates.push({...result,offset});}}}
  // Hard work-window violations precede deadline deficit; never silently relax them.
  candidates.sort((a,b)=>a.incidentConflicts.length-b.incidentConflicts.length||a.remainingWorks.length-b.remainingWorks.length||a.missed-b.missed||a.labor-b.labor||a.setupMinutes-b.setupMinutes);
- return {candidates,best:candidates[0],ms:performance.now()-start};
+ return {candidates,best:candidates[0],evaluated,ms:performance.now()-start};
 }
 export function stateAt(result,time){return Object.fromEntries(Object.entries(result.timeline).map(([id,items])=>[id,items.find(x=>time>=x.start-eps&&time<x.end-eps)||items.at(-1)]));}

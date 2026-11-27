@@ -4,7 +4,7 @@ import {ChartContainer,ChartTooltip,ChartTooltipContent} from './components/ui/c
 import {Card,CardHeader,CardTitle,CardDescription,CardContent} from './components/ui/card';
 import {fmtTime} from './engine';
 
-const colors=['#edeef0','#a1a1aa','#71717a'];
+const colors=['#65edd0','#82b5ff','#ffc274'];
 
 function OutputChart({epochs,products}){
   const host=useRef(null);

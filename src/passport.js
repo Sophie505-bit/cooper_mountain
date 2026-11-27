@@ -1,4 +1,11 @@
-import {POLICIES,simulate} from './engine.js';
+import {POLICIES,simulate,workPlan,fmtTime} from './engine.js';
+import {versionHistory} from './versions.js';
+
+export function intervalLabel(start,end){
+ if(end-start>=1)return fmtTime(start)+' — '+fmtTime(end);
+ const clock=t=>{const seconds=Math.round(t*60)+8*3600,day=1+Math.floor(seconds/86400),s=seconds%86400;return `D+${day} ${[Math.floor(s/3600),Math.floor(s%3600/60),s%60].map(n=>String(n).padStart(2,'0')).join(':')}`;};
+ return clock(start)+' — '+clock(end)+((end-start)*60<1?' (<1 с)':'');
+}
 
 export function workIntervals(result,job){
   return result.timeline[job.machine].filter(s=>s.validation===job.id || (s.job===job.id&&s.status==='maintenance')).map(({start,end})=>({start,end}));
@@ -6,7 +13,7 @@ export function workIntervals(result,job){
 
 export function passport(result,config){
   return {
-    incidentConflicts:result.incidentConflicts,strategy:result.policy.name,requestedStaff:config.staff,
+    incidentConflicts:result.incidentConflicts,validationConflicts:result.validationConflicts,strategy:result.policy.name,requestedStaff:config.staff,
     produced:result.total,late:result.missed,personHours:result.labor,
     orders:result.orderStats,
     shifts:result.shiftStats.map((shift,i)=>{
@@ -29,7 +36,13 @@ export function previousPlan(config){
   if(!config.events)return null;
   const second=config.events===2;
   const strategy=POLICIES.find(p=>p.id===(second?config.firstReplanPolicy:config.baselinePolicy))||POLICIES[0];
-  return simulate({...config,events:config.events-1,maintenanceOffset:(second?config.firstReplanOffset:config.baselineOffset)??0},strategy);
+  const p=workPlan(config,second?'firstReplan':'baseline');
+  return simulate({...config,events:config.events-1,maintenanceOffset:p.offset,workStarts:p.workStarts,maintenanceMachines:p.maintenanceMachines,validationMachines:p.validationMachines},strategy);
+}
+
+export function exportScenario(config,result,history){
+ const before=previousPlan(config),baseline=config.events===2?previousPlan({...config,events:1}):null;
+ return {schemaVersion:2,scenario:config,passport:passport(result,config),baseline:baseline?passport(baseline,baseline.config):null,beforeIncident:before?passport(before,before.config):null,versions:versionHistory(history),decisions:structuredClone(history)};
 }
 
 export function compareIncident(before,after){
