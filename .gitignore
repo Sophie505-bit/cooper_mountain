@@ -3,3 +3,6 @@ dist/
 .sites-runtime/
 *.tar.gz
 .pnpm-store/
+.env
+.env.*
+!.env.example

@@ -3,14 +3,15 @@ import {build} from 'esbuild';
 // Use compiled production CSS and embed the module worker so the demo runs from file://.
 const bundle=async(entry,options={})=>(await build({entryPoints:[entry],bundle:true,minify:true,write:false,format:'iife',...options})).outputFiles[0].text;
 const worker=await bundle('src/optimizer.worker.js');
+const aiWorker=await bundle('src/ai.worker.js');
 const script=await bundle('src/main.jsx',{
   loader:{'.css':'empty'},define:{'process.env.NODE_ENV':'"production"'},
   plugins:[{name:'standalone-worker',setup(builder){
-    builder.onLoad({filter:/main\.jsx$/},async({path})=>{
+    builder.onLoad({filter:/(main|AiCompare)\.jsx$/},async({path})=>{
       const source=await fs.readFile(path,'utf8');
       const url="new URL('./optimizer.worker.js',import.meta.url)";
-      if(!source.includes(url))throw Error('Optimizer worker entry not found');
-      return {loader:'jsx',contents:source.replace(url,()=> 'URL.createObjectURL(new Blob(['+JSON.stringify(worker)+'],{type:"text/javascript"}))')};
+      const aiUrl="new URL('./ai.worker.js',import.meta.url)";
+      return {loader:'jsx',contents:source.replace(url,()=> 'URL.createObjectURL(new Blob(['+JSON.stringify(worker)+'],{type:"text/javascript"}))').replace(aiUrl,()=> 'URL.createObjectURL(new Blob(['+JSON.stringify(aiWorker)+'],{type:"text/javascript"}))')};
     });
   }}]
 });

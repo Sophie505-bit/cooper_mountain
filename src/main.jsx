@@ -10,6 +10,7 @@ import React,{useState,useMemo,useEffect,useRef} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Box,Layers3,GitBranch,SlidersHorizontal,Upload,Download,Play,Pause,RotateCcw,Check,ChevronDown,Clock3,Users,Package,Activity,ArrowUpRight,Settings2,Wrench,AlertTriangle,CheckCircle2,X,Info,Maximize2,MousePointer2,Search,LockKeyhole,FileCheck2,BookOpen,Menu} from 'lucide-react';
 import Factory from './Factory.jsx';
+import AiCompare from './AiCompare.jsx';
 import {DEFAULT_CONFIG,POLICIES,PRODUCTS,MACHINES,TYPES,simulate,optimize,stateAt,fmtTime,validateConfig,workMinutes,captureWorkPlan} from './engine.js';
 import './style.css';
 import './graphite.css';
@@ -80,6 +81,7 @@ function App({index,store,manage}){
  const download=()=>{const data={...config};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='epoch-scenario.json';a.click();URL.revokeObjectURL(url);notify('Параметры сценария сохранены в JSON');};
  const importFile=async e=>{try{const f=e.target.files[0];if(!f)return;if(f.size>100000)throw Error('Файл должен быть меньше 100 КБ.');const c=validateConfig(JSON.parse(await f.text()));if(locked&&c.staff.some((n,i)=>i<2&&n!==config.staff[i]))throw Error('Заявка на смены 1–2 зафиксирована. Сбросьте сценарий, чтобы загрузить другую заявку.');if(config.events>0)throw Error('Для импорта другого сценария сначала восстановите исходный кейс.');update(c,true);if(c.events>0)setLocked(true);notify('Сценарий загружен и пересчитан');}catch(err){notify(err.message);}e.target.value='';};
  const setVariant=v=>{setPolicy(v.policy);update({maintenanceOffset:v.offset??config.maintenanceOffset});setModal(null);notify(`Применён вариант «${v.policy.name}». План стал черновиком.`);};
+ const applyCompared=v=>{setPolicy(v.policy);update(v.config,true);notify('Выбранный план применён. Требуется повторное согласование.');};
  const applyBreakdown=()=>{if(!locked){notify('Сначала зафиксируйте заявку на смены 1–2 в параметрах');setModal('parameters');return;}if(config.events===0){const next={...config,events:1,baselinePolicy:policy.id,baselineOffset:config.maintenanceOffset,...captureWorkPlan(config,'baseline')};update(next,true);recordDecision({stage:stage?1:0,action:'incident',at:new Date().toISOString(),role,note:'Поломка GRIND в 10:00, ремонт до 13:00'},{config:next,policy,locked});}setTime(120);};
  const applyAbsence=()=>{if(config.events===1){const next={...config,events:2,firstReplanPolicy:policy.id,firstReplanOffset:config.maintenanceOffset,...captureWorkPlan(config,'firstReplan')};update(next,true);recordDecision({stage:stage?1:0,action:'incident',at:new Date().toISOString(),role,note:'Сообщение в 19:30: два невыхода на смену 2'},{config:next,policy,locked});}setTime(690);};
  useEffect(()=>{
@@ -124,7 +126,7 @@ function App({index,store,manage}){
 
     </>}
     {tab==='orders'&&<Orders update={update} result={result} config={config} onEdit={()=>setModal('parameters')}/>}
-    {tab==='compare'&&<Variants config={config} optimization={optimization} onApply={setVariant} current={policy.id} run={runOptimize}/>}
+    {tab==='compare'&&<><AiCompare config={config} policy={policy} onApply={applyCompared}/><h2>Обычные варианты</h2><Variants config={config} optimization={optimization} onApply={setVariant} current={policy.id} run={runOptimize}/></>}
     {tab==='passport'&&<ScenarioReport store={store} config={config} result={result}/>}
 
     <footer><span><span className="pulse-dot"/>Расчёт обновлён · {result.epochs.length} эпох · {result.ms.toFixed(1)} мс</span><span>Учебная модель · дискретный участок · {MACHINES.length} машин</span><span>ЭПОХА · v1.3</span></footer>
